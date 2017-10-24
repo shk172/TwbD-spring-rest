@@ -51,3 +51,5 @@ Temporary Items
 #Dependencies and Build
 /.gradle
 /build
+/node_modules
+/target
