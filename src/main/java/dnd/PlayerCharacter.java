@@ -2,7 +2,7 @@ package main.java.dnd;
 
 import java.util.HashMap;
 
-public class Character {
+public class PlayerCharacter {
 	private final String name;
 	private final String baseClass;
 	private final String campaignID;
@@ -57,7 +57,7 @@ public class Character {
 	private int survival;
 	
 	
-	Character(String name, String campaignID, String baseClass, String race){
+	PlayerCharacter(String name, String campaignID, String baseClass, String race){
 		this.name = name;
 		this.campaignID = campaignID;
 		this.baseClass = baseClass;
@@ -72,6 +72,11 @@ public class Character {
 		return stats.get(stat);
 	}
 	
+	public HashMap<String, Integer> getAllStats(){
+		return stats;
+	}
+	
+	
 	public void setSavingThrows(String st, int num) {
 		savingThrows.put(st, num);
 	}
@@ -80,11 +85,19 @@ public class Character {
 		return savingThrows.get(st);
 	}
 	
+	public HashMap<String, Integer> getAllSavingThrows(){
+		return savingThrows;
+	}
+	
 	public void setSkills(String sk, int num) {
-		savingThrows.put(sk, num);
+		skills.put(sk, num);
 	}
 	
 	public int getSkills(String sk) {
-		return savingThrows.get(sk);
+		return skills.get(sk);
+	}
+	
+	public HashMap<String, Integer> getAllSkills(){
+		return skills;
 	}
 }

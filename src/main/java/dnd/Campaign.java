@@ -1,12 +1,11 @@
 package main.java.dnd;
 
-import java.util.HashSet;
 import java.util.HashMap;
 
 public class Campaign {
 	private final String id;
 	private HashMap<String, Player> players;
-	private HashMap<String, Character> npcs;
+	private HashMap<String, PlayerCharacter> npcs;
 	
 	Campaign(String id){
 		this.id = id;
@@ -20,7 +19,7 @@ public class Campaign {
 		players.remove(id);
 	}
 	
-	public void addNPC(String name, Character NPC) {
+	public void addNPC(String name, PlayerCharacter NPC) {
 		npcs.put(name, NPC);
 	}
 	
