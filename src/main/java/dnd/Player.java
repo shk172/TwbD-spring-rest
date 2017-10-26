@@ -13,8 +13,8 @@ public class Player {
 	private @Id @GeneratedValue long userID;
 	private String userName;
 	private String nickname;
-	private HashMap<String, PlayerCharacter> characters;
-	private HashMap<String, Player> friends;
+	//private HashMap<String, PlayerCharacter> characters;
+	//private HashMap<String, Player> friends;
 	
 	private Player() {}
 	
@@ -28,7 +28,7 @@ public class Player {
 		this.nickname = nickname;
 		this.userID = Objects.hashCode(userName);
 	}
-	
+	/*
 	public void addCharacter(String campaignID, PlayerCharacter character) {
 		characters.put(campaignID, character);
 	}
@@ -41,5 +41,5 @@ public class Player {
 		return characters;
 	}
 
-
+*/
 }
