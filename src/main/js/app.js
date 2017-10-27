@@ -1,6 +1,7 @@
 const React = require('react');
 const ReactDOM = require('react-dom');
 const client = require('./client');
+const when = require('when');
 const follow = require('./follow');
 
 const root = '/api';
@@ -16,6 +17,7 @@ class App extends React.Component {
 			links: {}};
 		this.updatePageSize = this.updatePageSize.bind(this);
 		this.onCreate = this.onCreate.bind(this);
+		this.onUpdate = this.onUpdate.bind(this);
 		this.onDelete = this.onDelete.bind(this);
 		this.onNavigate = this.onNavigate.bind(this);
 	}
@@ -30,16 +32,29 @@ class App extends React.Component {
 				headers: {'Accept': 'application/schema+json'}
 			}).then(schema => {
 				this.schema = schema.entity;
+				this.links = playerCollection.entity._links;
 				return playerCollection;
 			});
-		}).done(playerCollection => {
+		}).then(playerCollection => {
 			console.log(playerCollection);
+			return playerCollection.entity._embedded.players.map(player =>
+					client({
+						method: 'GET',
+						path: player._links.self.href
+					})
+			);
+		}).then(playerPromises => {
+			console.log(playerPromises);
+			console.log(when.all(playerPromises));
+			return when.all(playerPromises);
+		}).done(players => {
+			console.log(players);
 			this.setState({
-				playerCollection: playerCollection,
-				players: playerCollection.entity._embedded.players,
+				players: players,
 				attributes: Object.keys(this.schema.properties),
 				pageSize: pageSize,
-				links: playerCollection.entity._links});
+				links: this.links
+			});
 		});
 	}
 
@@ -69,13 +84,46 @@ class App extends React.Component {
 		});
 	}
 
+	onUpdate(player, updatedPlayer) {
+		client({
+			method: 'PUT',
+			path: player.entity._links.self.href,
+			entity: updatedPlayer,
+			headers: {
+				'Content-Type': 'application/json',
+				'If-Match': player.headers.Etag
+			}
+		}).done(response => {
+			this.loadFromServer(this.state.pageSize);
+		}, response => {
+			if (response.status.code === 412) {
+				alert('DENIED: Unable to update ' +
+					player.entity._links.self.href + '. Your copy is stale.');
+			}
+		});
+	}
+
 	onNavigate(navUri) {
-		client({method: 'GET', path: navUri}).done(playerCollection => {
+		client({
+			method: 'GET',
+			path: navUri
+		}).then(playerCollection => {
+			this.links = playerCollection.entity._links;
+
+			return playerCollection.entity._embedded.players.map(player =>
+					client({
+						method: 'GET',
+						path: player._links.self.href
+					})
+			);
+		}).then(playerPromises => {
+			return when.all(playerPromises);
+		}).done(players => {
 			this.setState({
-				players: playerCollection.entity._embedded.players,
-				attributes: this.state.attributes,
+				players: players,
+				attributes: Object.keys(this.schema.properties),
 				pageSize: this.state.pageSize,
-				links: playerCollection.entity._links
+				links: this.links
 			});
 		});
 	}
@@ -88,7 +136,6 @@ class App extends React.Component {
 
 	componentDidMount() {
 		this.loadFromServer(this.state.pageSize);
-		console.log(this.state.playerCollection);
 	}
 	
 	render() {
@@ -100,7 +147,9 @@ class App extends React.Component {
 				<PlayerList 
 					players={this.state.players}
 					links={this.state.links}
+					attributes={this.state.attributes}
 					onNavigate={this.onNavigate}
+					onUpdate={this.onUpdate}
 					onDelete={this.onDelete}
 					pageSize={this.state.pageSize}
 					updatePageSize={this.updatePageSize}/>
@@ -108,6 +157,55 @@ class App extends React.Component {
 		)
 	}
 }
+
+class UpdateDialog extends React.Component {
+
+	constructor(props) {
+		super(props);
+		this.handleSubmit = this.handleSubmit.bind(this);
+	}
+
+	handleSubmit(e) {
+		e.preventDefault();
+		var updatedPlayer = {};
+		this.props.attributes.forEach(attribute => {
+			updatedPlayer[attribute] = ReactDOM.findDOMNode(this.refs[attribute]).value.trim();
+		});
+		this.props.onUpdate(this.props.player, updatedPlayer);
+		window.location = "#";
+	}
+
+	render() {
+		var inputs = this.props.attributes.map(attribute =>
+				<p key={this.props.player.entity[attribute]}>
+					<input type="text" placeholder={attribute}
+						   defaultValue={this.props.player.entity[attribute]}
+						   ref={attribute} className="field" />
+				</p>
+		);
+
+		var dialogId = "updatePlayer-" + this.props.player.entity._links.self.href;
+
+		return (
+			<div key={this.props.player.entity._links.self.href}>
+				<a href={"#" + dialogId}>Update</a>
+				<div id={dialogId} className="modalDialog">
+					<div>
+						<a href="#" title="Close" className="close">X</a>
+
+						<h2>Update a player</h2>
+
+						<form>
+							{inputs}
+							<button onClick={this.handleSubmit}>Update</button>
+						</form>
+					</div>
+				</div>
+			</div>
+		)
+	}
+
+};
 
 class CreateDialog extends React.Component {
 
@@ -165,6 +263,7 @@ class CreateDialog extends React.Component {
 class PlayerList extends React.Component{
 	constructor(props){
 		super(props);
+		console.log(this.props);
 		this.handleNavFirst = this.handleNavFirst.bind(this);
 		this.handleNavPrev = this.handleNavPrev.bind(this);
 		this.handleNavNext = this.handleNavNext.bind(this);
@@ -204,11 +303,14 @@ class PlayerList extends React.Component{
 	}
 
 	render() {
+		console.log(this.props.players);
 		var players = this.props.players.map(player =>
 			<Player 
-				key={player._links.self.href} 
+				key={player.entity._links.self.href} 
 				player={player} 
-				onDelete={this.props.onDelete}/>
+				attributes={this.props.attributes}
+				onDelete={this.props.onDelete}
+				onUpdate={this.props.onUpdate}/>
 		);
 
 		var navLinks = [];
@@ -253,6 +355,7 @@ class PlayerList extends React.Component{
 class Player extends React.Component{
 	constructor(props) {
 		super(props);
+		console.log(this.props)
 		this.handleDelete = this.handleDelete.bind(this);
 	}
 
@@ -263,8 +366,14 @@ class Player extends React.Component{
 	render() {
 		return (
 			<tr>
-				<td>{this.props.player.userName}</td>
-				<td>{this.props.player.nickname}</td>
+				<td>{this.props.player.entity.userName}</td>
+				<td>{this.props.player.entity.nickname}</td>
+				<td>
+					<UpdateDialog 
+						player={this.props.player}
+					  attributes={this.props.attributes}
+					  onUpdate={this.props.onUpdate}/>
+				</td>
 				<td>
 					<button onClick={this.handleDelete}>Delete</button>
 				</td>

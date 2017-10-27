@@ -57,6 +57,7 @@
 	var React = __webpack_require__(1);
 	var ReactDOM = __webpack_require__(37);
 	var client = __webpack_require__(184);
+	var when = __webpack_require__(190);
 	var follow = __webpack_require__(232);
 	
 	var root = '/api';
@@ -76,6 +77,7 @@
 				links: {} };
 			_this.updatePageSize = _this.updatePageSize.bind(_this);
 			_this.onCreate = _this.onCreate.bind(_this);
+			_this.onUpdate = _this.onUpdate.bind(_this);
 			_this.onDelete = _this.onDelete.bind(_this);
 			_this.onNavigate = _this.onNavigate.bind(_this);
 			return _this;
@@ -93,16 +95,29 @@
 						headers: { 'Accept': 'application/schema+json' }
 					}).then(function (schema) {
 						_this2.schema = schema.entity;
+						_this2.links = playerCollection.entity._links;
 						return playerCollection;
 					});
-				}).done(function (playerCollection) {
+				}).then(function (playerCollection) {
 					console.log(playerCollection);
+					return playerCollection.entity._embedded.players.map(function (player) {
+						return client({
+							method: 'GET',
+							path: player._links.self.href
+						});
+					});
+				}).then(function (playerPromises) {
+					console.log(playerPromises);
+					console.log(when.all(playerPromises));
+					return when.all(playerPromises);
+				}).done(function (players) {
+					console.log(players);
 					_this2.setState({
-						playerCollection: playerCollection,
-						players: playerCollection.entity._embedded.players,
+						players: players,
 						attributes: Object.keys(_this2.schema.properties),
 						pageSize: pageSize,
-						links: playerCollection.entity._links });
+						links: _this2.links
+					});
 				});
 			}
 		}, {
@@ -137,16 +152,51 @@
 				});
 			}
 		}, {
-			key: 'onNavigate',
-			value: function onNavigate(navUri) {
+			key: 'onUpdate',
+			value: function onUpdate(player, updatedPlayer) {
 				var _this5 = this;
 	
-				client({ method: 'GET', path: navUri }).done(function (playerCollection) {
-					_this5.setState({
-						players: playerCollection.entity._embedded.players,
-						attributes: _this5.state.attributes,
-						pageSize: _this5.state.pageSize,
-						links: playerCollection.entity._links
+				client({
+					method: 'PUT',
+					path: player.entity._links.self.href,
+					entity: updatedPlayer,
+					headers: {
+						'Content-Type': 'application/json',
+						'If-Match': player.headers.Etag
+					}
+				}).done(function (response) {
+					_this5.loadFromServer(_this5.state.pageSize);
+				}, function (response) {
+					if (response.status.code === 412) {
+						alert('DENIED: Unable to update ' + player.entity._links.self.href + '. Your copy is stale.');
+					}
+				});
+			}
+		}, {
+			key: 'onNavigate',
+			value: function onNavigate(navUri) {
+				var _this6 = this;
+	
+				client({
+					method: 'GET',
+					path: navUri
+				}).then(function (playerCollection) {
+					_this6.links = playerCollection.entity._links;
+	
+					return playerCollection.entity._embedded.players.map(function (player) {
+						return client({
+							method: 'GET',
+							path: player._links.self.href
+						});
+					});
+				}).then(function (playerPromises) {
+					return when.all(playerPromises);
+				}).done(function (players) {
+					_this6.setState({
+						players: players,
+						attributes: Object.keys(_this6.schema.properties),
+						pageSize: _this6.state.pageSize,
+						links: _this6.links
 					});
 				});
 			}
@@ -161,7 +211,6 @@
 			key: 'componentDidMount',
 			value: function componentDidMount() {
 				this.loadFromServer(this.state.pageSize);
-				console.log(this.state.playerCollection);
 			}
 		}, {
 			key: 'render',
@@ -175,7 +224,9 @@
 					React.createElement(PlayerList, {
 						players: this.state.players,
 						links: this.state.links,
+						attributes: this.state.attributes,
 						onNavigate: this.onNavigate,
+						onUpdate: this.onUpdate,
 						onDelete: this.onDelete,
 						pageSize: this.state.pageSize,
 						updatePageSize: this.updatePageSize })
@@ -186,33 +237,120 @@
 		return App;
 	}(React.Component);
 	
-	var CreateDialog = function (_React$Component2) {
-		_inherits(CreateDialog, _React$Component2);
+	var UpdateDialog = function (_React$Component2) {
+		_inherits(UpdateDialog, _React$Component2);
+	
+		function UpdateDialog(props) {
+			_classCallCheck(this, UpdateDialog);
+	
+			var _this7 = _possibleConstructorReturn(this, (UpdateDialog.__proto__ || Object.getPrototypeOf(UpdateDialog)).call(this, props));
+	
+			_this7.handleSubmit = _this7.handleSubmit.bind(_this7);
+			return _this7;
+		}
+	
+		_createClass(UpdateDialog, [{
+			key: 'handleSubmit',
+			value: function handleSubmit(e) {
+				var _this8 = this;
+	
+				e.preventDefault();
+				var updatedPlayer = {};
+				this.props.attributes.forEach(function (attribute) {
+					updatedPlayer[attribute] = ReactDOM.findDOMNode(_this8.refs[attribute]).value.trim();
+				});
+				this.props.onUpdate(this.props.player, updatedPlayer);
+				window.location = "#";
+			}
+		}, {
+			key: 'render',
+			value: function render() {
+				var _this9 = this;
+	
+				var inputs = this.props.attributes.map(function (attribute) {
+					return React.createElement(
+						'p',
+						{ key: _this9.props.player.entity[attribute] },
+						React.createElement('input', { type: 'text', placeholder: attribute,
+							defaultValue: _this9.props.player.entity[attribute],
+							ref: attribute, className: 'field' })
+					);
+				});
+	
+				var dialogId = "updatePlayer-" + this.props.player.entity._links.self.href;
+	
+				return React.createElement(
+					'div',
+					{ key: this.props.player.entity._links.self.href },
+					React.createElement(
+						'a',
+						{ href: "#" + dialogId },
+						'Update'
+					),
+					React.createElement(
+						'div',
+						{ id: dialogId, className: 'modalDialog' },
+						React.createElement(
+							'div',
+							null,
+							React.createElement(
+								'a',
+								{ href: '#', title: 'Close', className: 'close' },
+								'X'
+							),
+							React.createElement(
+								'h2',
+								null,
+								'Update a player'
+							),
+							React.createElement(
+								'form',
+								null,
+								inputs,
+								React.createElement(
+									'button',
+									{ onClick: this.handleSubmit },
+									'Update'
+								)
+							)
+						)
+					)
+				);
+			}
+		}]);
+	
+		return UpdateDialog;
+	}(React.Component);
+	
+	;
+	
+	var CreateDialog = function (_React$Component3) {
+		_inherits(CreateDialog, _React$Component3);
 	
 		function CreateDialog(props) {
 			_classCallCheck(this, CreateDialog);
 	
-			var _this6 = _possibleConstructorReturn(this, (CreateDialog.__proto__ || Object.getPrototypeOf(CreateDialog)).call(this, props));
+			var _this10 = _possibleConstructorReturn(this, (CreateDialog.__proto__ || Object.getPrototypeOf(CreateDialog)).call(this, props));
 	
-			_this6.handleSubmit = _this6.handleSubmit.bind(_this6);
-			return _this6;
+			_this10.handleSubmit = _this10.handleSubmit.bind(_this10);
+			return _this10;
 		}
 	
 		_createClass(CreateDialog, [{
 			key: 'handleSubmit',
 			value: function handleSubmit(e) {
-				var _this7 = this;
+				var _this11 = this;
 	
 				e.preventDefault();
 				var newPlayer = {};
 				this.props.attributes.forEach(function (attribute) {
-					newPlayer[attribute] = ReactDOM.findDOMNode(_this7.refs[attribute]).value.trim();
+					newPlayer[attribute] = ReactDOM.findDOMNode(_this11.refs[attribute]).value.trim();
 				});
 				this.props.onCreate(newPlayer);
 	
 				// clear out the dialog's inputs
 				this.props.attributes.forEach(function (attribute) {
-					ReactDOM.findDOMNode(_this7.refs[attribute]).value = '';
+					ReactDOM.findDOMNode(_this11.refs[attribute]).value = '';
 				});
 	
 				// Navigate away from the dialog to hide it.
@@ -276,20 +414,21 @@
 		return CreateDialog;
 	}(React.Component);
 	
-	var PlayerList = function (_React$Component3) {
-		_inherits(PlayerList, _React$Component3);
+	var PlayerList = function (_React$Component4) {
+		_inherits(PlayerList, _React$Component4);
 	
 		function PlayerList(props) {
 			_classCallCheck(this, PlayerList);
 	
-			var _this8 = _possibleConstructorReturn(this, (PlayerList.__proto__ || Object.getPrototypeOf(PlayerList)).call(this, props));
+			var _this12 = _possibleConstructorReturn(this, (PlayerList.__proto__ || Object.getPrototypeOf(PlayerList)).call(this, props));
 	
-			_this8.handleNavFirst = _this8.handleNavFirst.bind(_this8);
-			_this8.handleNavPrev = _this8.handleNavPrev.bind(_this8);
-			_this8.handleNavNext = _this8.handleNavNext.bind(_this8);
-			_this8.handleNavLast = _this8.handleNavLast.bind(_this8);
-			_this8.handleInput = _this8.handleInput.bind(_this8);
-			return _this8;
+			console.log(_this12.props);
+			_this12.handleNavFirst = _this12.handleNavFirst.bind(_this12);
+			_this12.handleNavPrev = _this12.handleNavPrev.bind(_this12);
+			_this12.handleNavNext = _this12.handleNavNext.bind(_this12);
+			_this12.handleNavLast = _this12.handleNavLast.bind(_this12);
+			_this12.handleInput = _this12.handleInput.bind(_this12);
+			return _this12;
 		}
 	
 		_createClass(PlayerList, [{
@@ -330,13 +469,16 @@
 		}, {
 			key: 'render',
 			value: function render() {
-				var _this9 = this;
+				var _this13 = this;
 	
+				console.log(this.props.players);
 				var players = this.props.players.map(function (player) {
 					return React.createElement(Player, {
-						key: player._links.self.href,
+						key: player.entity._links.self.href,
 						player: player,
-						onDelete: _this9.props.onDelete });
+						attributes: _this13.props.attributes,
+						onDelete: _this13.props.onDelete,
+						onUpdate: _this13.props.onUpdate });
 				});
 	
 				var navLinks = [];
@@ -413,16 +555,17 @@
 		return PlayerList;
 	}(React.Component);
 	
-	var Player = function (_React$Component4) {
-		_inherits(Player, _React$Component4);
+	var Player = function (_React$Component5) {
+		_inherits(Player, _React$Component5);
 	
 		function Player(props) {
 			_classCallCheck(this, Player);
 	
-			var _this10 = _possibleConstructorReturn(this, (Player.__proto__ || Object.getPrototypeOf(Player)).call(this, props));
+			var _this14 = _possibleConstructorReturn(this, (Player.__proto__ || Object.getPrototypeOf(Player)).call(this, props));
 	
-			_this10.handleDelete = _this10.handleDelete.bind(_this10);
-			return _this10;
+			console.log(_this14.props);
+			_this14.handleDelete = _this14.handleDelete.bind(_this14);
+			return _this14;
 		}
 	
 		_createClass(Player, [{
@@ -439,12 +582,20 @@
 					React.createElement(
 						'td',
 						null,
-						this.props.player.userName
+						this.props.player.entity.userName
 					),
 					React.createElement(
 						'td',
 						null,
-						this.props.player.nickname
+						this.props.player.entity.nickname
+					),
+					React.createElement(
+						'td',
+						null,
+						React.createElement(UpdateDialog, {
+							player: this.props.player,
+							attributes: this.props.attributes,
+							onUpdate: this.props.onUpdate })
 					),
 					React.createElement(
 						'td',
